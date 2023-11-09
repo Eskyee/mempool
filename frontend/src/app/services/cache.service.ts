@@ -17,6 +17,8 @@ export class CacheService {
 
   txCache: { [txid: string]: Transaction } = {};
 
+  network: string;
+  blockHashCache: { [hash: string]: BlockExtended } = {};
   blockCache: { [height: number]: BlockExtended } = {};
   blockLoading: { [height: number]: boolean } = {};
   copiesInBlockQueue: { [height: number]: number } = {};
@@ -26,12 +28,18 @@ export class CacheService {
     private stateService: StateService,
     private apiService: ApiService,
   ) {
-    this.stateService.blocks$.subscribe(([block]) => {
-      this.addBlockToCache(block);
+    this.stateService.blocks$.subscribe((blocks) => {
+      for (const block of blocks) {
+        this.addBlockToCache(block);
+      }
       this.clearBlocks();
     });
     this.stateService.chainTip$.subscribe((height) => {
       this.tip = height;
+    });
+    this.stateService.networkChanged$.subscribe((network) => {
+      this.network = network;
+      this.resetBlockCache();
     });
   }
 
@@ -51,8 +59,11 @@ export class CacheService {
   }
 
   addBlockToCache(block: BlockExtended) {
-    this.blockCache[block.height] = block;
-    this.bumpBlockPriority(block.height);
+    if (!this.blockHashCache[block.id]) {
+      this.blockHashCache[block.id] = block;
+      this.blockCache[block.height] = block;
+      this.bumpBlockPriority(block.height);
+    }
   }
 
   async loadBlock(height) {
@@ -62,15 +73,22 @@ export class CacheService {
       for (let i = 0; i < chunkSize; i++) {
         this.blockLoading[maxHeight - i] = true;
       }
-      const result = await firstValueFrom(this.apiService.getBlocks$(maxHeight));
-      for (let i = 0; i < chunkSize; i++) {
-        delete this.blockLoading[maxHeight - i];
+      let result;
+      try {
+        result = await firstValueFrom(this.apiService.getBlocks$(maxHeight));
+      } catch (e) {
+        console.log("failed to load blocks: ", e.message);
       }
       if (result && result.length) {
         result.forEach(block => {
-          this.addBlockToCache(block);
-          this.loadedBlocks$.next(block);
+          if (this.blockLoading[block.height]) {
+            this.addBlockToCache(block);
+            this.loadedBlocks$.next(block);
+          }
         });
+      }
+      for (let i = 0; i < chunkSize; i++) {
+        delete this.blockLoading[maxHeight - i];
       }
       this.clearBlocks();
     } else {
@@ -93,10 +111,21 @@ export class CacheService {
       } else if ((this.tip - height) < KEEP_RECENT_BLOCKS) {
         this.bumpBlockPriority(height);
       } else {
+        const block = this.blockCache[height];
         delete this.blockCache[height];
+        delete this.blockHashCache[block.id];
         delete this.copiesInBlockQueue[height];
       }
     }
+  }
+
+  // remove all blocks from the cache
+  resetBlockCache() {
+    this.blockHashCache = {};
+    this.blockCache = {};
+    this.blockLoading = {};
+    this.copiesInBlockQueue = {};
+    this.blockPriorities = [];
   }
 
   getCachedBlock(height) {

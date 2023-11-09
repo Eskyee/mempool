@@ -1,5 +1,5 @@
 import { Component, Inject, Input, LOCALE_ID, OnInit, HostBinding } from '@angular/core';
-import { EChartsOption, graphic } from 'echarts';
+import { echarts, EChartsOption } from '../../graphs/echarts';
 import { Observable } from 'rxjs';
 import { map, share, startWith, switchMap, tap } from 'rxjs/operators';
 import { SeoService } from '../../services/seo.service';
@@ -64,6 +64,7 @@ export class LightningStatisticsChartComponent implements OnInit {
       this.miningWindowPreference = '3y';
     } else {
       this.seoService.setTitle($localize`:@@ea8db27e6db64f8b940711948c001a1100e5fe9f:Lightning Network Capacity`);
+      this.seoService.setDescription($localize`:@@meta.description.lightning.stats-chart:See the capacity of the Lightning network visualized over time in terms of the number of open channels and total bitcoin capacity.`);
       this.miningWindowPreference = this.miningService.getDefaultTimespan('all');
     }
     this.radioGroupForm = this.formBuilder.group({ dateSpan: this.miningWindowPreference });
@@ -121,7 +122,7 @@ export class LightningStatisticsChartComponent implements OnInit {
         },
         text: $localize`:@@ea8db27e6db64f8b940711948c001a1100e5fe9f:Lightning Network Capacity`,
         left: 'center',
-        top: 11,
+        top: 0,
         zlevel: 10,
       };
     }
@@ -131,14 +132,14 @@ export class LightningStatisticsChartComponent implements OnInit {
       animation: false,
       color: [
         '#FFB300',
-        new graphic.LinearGradient(0, 0.75, 0, 1, [
+        new echarts.graphic.LinearGradient(0, 0.75, 0, 1, [
           { offset: 0, color: '#D81B60' },
           { offset: 1, color: '#D81B60AA' },
         ]),
       ],
       grid: {
-        height: this.widget ? 100 : undefined,
-        top: this.widget ? 10 : 40,
+        height: this.widget ? 90 : undefined,
+        top: this.widget ? 20 : 40,
         bottom: this.widget ? 0 : 70,
         right: (isMobile() && this.widget) ? 35 : this.right,
         left: (isMobile() && this.widget) ? 40 :this.left,
@@ -256,7 +257,7 @@ export class LightningStatisticsChartComponent implements OnInit {
       series: data.channel_count.length === 0 ? [] : [
         {
           zlevel: 1,
-          name: 'Channels',
+          name: $localize`:@@807cf11e6ac1cde912496f764c176bdfdd6b7e19:Channels`,
           showSymbol: false,
           symbol: 'none',
           data: data.channel_count,

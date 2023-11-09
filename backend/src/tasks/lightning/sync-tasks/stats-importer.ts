@@ -15,16 +15,20 @@ class LightningStatsImporter {
   topologiesFolder = config.LIGHTNING.TOPOLOGY_FOLDER;
 
   async $run(): Promise<void> {
-    const [channels]: any[] = await DB.query('SELECT short_id from channels;');
-    logger.info(`Caching funding txs for currently existing channels`, logger.tags.ln);
-    await fundingTxFetcher.$fetchChannelsFundingTxs(channels.map(channel => channel.short_id));
+    try {
+      const [channels]: any[] = await DB.query('SELECT short_id from channels;');
+      logger.info(`Caching funding txs for currently existing channels`, logger.tags.ln);
+      await fundingTxFetcher.$fetchChannelsFundingTxs(channels.map(channel => channel.short_id));
 
-    if (config.MEMPOOL.NETWORK !== 'mainnet' || config.DATABASE.ENABLED === false) {
-      return;
+      if (config.MEMPOOL.NETWORK !== 'mainnet' || config.DATABASE.ENABLED === false) {
+        return;
+      }
+
+      await this.$importHistoricalLightningStats();
+      await this.$cleanupIncorrectSnapshot();
+    } catch (e) {
+      logger.err(`Exception in LightningStatsImporter::$run(). ${e}`);
     }
-
-    await this.$importHistoricalLightningStats();
-    await this.$cleanupIncorrectSnapshot();
   }
 
   /**
@@ -411,7 +415,7 @@ class LightningStatsImporter {
       }
 
       if (totalProcessed > 0) {
-        logger.notice(`Lightning network stats historical import completed`, logger.tags.ln);
+        logger.info(`Lightning network stats historical import completed`, logger.tags.ln);
       }
     } catch (e) {
       logger.err(`Lightning network stats historical failed. Reason: ${e instanceof Error ? e.message : e}`, logger.tags.ln);

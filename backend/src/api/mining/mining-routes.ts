@@ -1,17 +1,18 @@
 import { Application, Request, Response } from 'express';
 import config from "../../config";
 import logger from '../../logger';
-import audits from '../audit';
 import BlocksAuditsRepository from '../../repositories/BlocksAuditsRepository';
 import BlocksRepository from '../../repositories/BlocksRepository';
 import DifficultyAdjustmentsRepository from '../../repositories/DifficultyAdjustmentsRepository';
 import HashratesRepository from '../../repositories/HashratesRepository';
 import bitcoinClient from '../bitcoin/bitcoin-client';
 import mining from "./mining";
+import PricesRepository from '../../repositories/PricesRepository';
 
 class MiningRoutes {
   public initRoutes(app: Application) {
     app
+      .get(config.MEMPOOL.API_URL_PREFIX + 'mining/pools', this.$listPools)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/pools/:interval', this.$getPools)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/pool/:slug/hashrate', this.$getPoolHistoricalHashrate)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/pool/:slug/blocks', this.$getPoolBlocks)
@@ -26,13 +27,35 @@ class MiningRoutes {
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/fee-rates/:interval', this.$getHistoricalBlockFeeRates)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/sizes-weights/:interval', this.$getHistoricalBlockSizeAndWeight)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/difficulty-adjustments/:interval', this.$getDifficultyAdjustments)
-      .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/predictions/:interval', this.$getHistoricalBlockPrediction)
+      .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/predictions/:interval', this.$getHistoricalBlocksHealth)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/audit/scores', this.$getBlockAuditScores)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/audit/scores/:height', this.$getBlockAuditScores)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/audit/score/:hash', this.$getBlockAuditScore)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/audit/:hash', this.$getBlockAudit)
       .get(config.MEMPOOL.API_URL_PREFIX + 'mining/blocks/timestamp/:timestamp', this.$getHeightFromTimestamp)
+      .get(config.MEMPOOL.API_URL_PREFIX + 'historical-price', this.$getHistoricalPrice)
     ;
+  }
+
+  private async $getHistoricalPrice(req: Request, res: Response): Promise<void> {
+    try {
+      res.header('Pragma', 'public');
+      res.header('Cache-control', 'public');
+      res.setHeader('Expires', new Date(Date.now() + 1000 * 300).toUTCString());
+      if (['testnet', 'signet', 'liquidtestnet'].includes(config.MEMPOOL.NETWORK)) {
+        res.status(400).send('Prices are not available on testnets.');
+        return;
+      }
+      if (req.query.timestamp) {
+        res.status(200).send(await PricesRepository.$getNearestHistoricalPrice(
+          parseInt(<string>req.query.timestamp ?? 0, 10)
+        ));
+      } else {
+        res.status(200).send(await PricesRepository.$getHistoricalPrices());
+      }
+    } catch (e) {
+      res.status(500).send(e instanceof Error ? e.message : e);
+    }
   }
 
   private async $getPool(req: Request, res: Response): Promise<void> {
@@ -67,6 +90,29 @@ class MiningRoutes {
       } else {
         res.status(500).send(e instanceof Error ? e.message : e);
       }
+    }
+  }
+
+  private async $listPools(req: Request, res: Response): Promise<void> {
+    try {
+      res.header('Pragma', 'public');
+      res.header('Cache-control', 'public');
+      res.setHeader('Expires', new Date(Date.now() + 1000 * 60).toUTCString());
+
+      const pools = await mining.$listPools();
+      if (!pools) {
+        res.status(500).end();
+        return;
+      }
+
+      res.header('X-total-count', pools.length.toString());
+      if (pools.length === 0) {
+        res.status(204).send();
+      } else {
+        res.json(pools);
+      }
+    } catch (e) {
+      res.status(500).send(e instanceof Error ? e.message : e);
     }
   }
 
@@ -226,15 +272,15 @@ class MiningRoutes {
     }
   }
 
-  private async $getHistoricalBlockPrediction(req: Request, res: Response) {
+  private async $getHistoricalBlocksHealth(req: Request, res: Response) {
     try {
-      const blockPredictions = await mining.$getBlockPredictionsHistory(req.params.interval);
-      const blockCount = await BlocksAuditsRepository.$getPredictionsCount();
+      const blocksHealth = await mining.$getBlocksHealthHistory(req.params.interval);
+      const blockCount = await BlocksAuditsRepository.$getBlocksHealthCount();
       res.header('Pragma', 'public');
       res.header('Cache-control', 'public');
       res.header('X-total-count', blockCount.toString());
       res.setHeader('Expires', new Date(Date.now() + 1000 * 60).toUTCString());
-      res.json(blockPredictions.map(prediction => [prediction.time, prediction.height, prediction.match_rate]));
+      res.json(blocksHealth.map(health => [health.time, health.height, health.match_rate]));
     } catch (e) {
       res.status(500).send(e instanceof Error ? e.message : e);
     }
@@ -245,7 +291,7 @@ class MiningRoutes {
       const audit = await BlocksAuditsRepository.$getBlockAudit(req.params.hash);
 
       if (!audit) {
-        res.status(404).send(`This block has not been audited.`);
+        res.status(204).send(`This block has not been audited.`);
         return;
       }
 

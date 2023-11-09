@@ -10,12 +10,13 @@
       <div class="doc-content">
 
         <div id="disclaimer">
-          <table><tr><td><svg viewBox="0 0 304 304" xmlns="http://www.w3.org/2000/svg"><g fill-rule="evenodd" style="fill:#ffc107;fill-opacity:1"><path d="M135.3 34.474c-15.62 27.306-54.206 95.63-85.21 150.534L9.075 257.583C5.382 264.08 6.76 269.217 7.908 271.7c2.326 5.028 7.29 7.537 11.155 8.215l.78.133 264.698.006-.554-.02c4.152.255 9.664-1.24 12.677-6.194 1.926-3.18 3.31-8.589-1.073-16.278L213.637 114.37l-45.351-79.205c-5.681-9.932-12.272-12.022-16.8-12.022-4.42 0-10.818 1.964-16.181 11.331h-.006zm-69.072 159.94c30.997-54.885 69.563-123.184 85.16-150.446l.186-.297c.2.303.393.582.618.981l45.363 79.22s72.377 126.47 78.569 137.283l-247.618-.007 37.719-66.734" style="fill:#ffc107;fill-opacity:1"/><path d="M152.597 247.445c8.02 0 14.518-6.728 14.518-15.025 0-8.29-6.499-15.018-14.518-15.018-8.031 0-14.529 6.728-14.529 15.018 0 8.297 6.498 15.025 14.53 15.025m-.001-147.18c11.586 0 22.23 10.958 20.977 21.7l-9.922 75.564c-.966 6.601-4.95 11.433-11.055 11.433s-10.102-4.832-11.056-11.433l-9.927-75.564c-1.26-10.742 9.39-21.7 20.983-21.7" style="fill:#ffc107;fill-opacity:1"/></g></svg></td><td><p><b>mempool.space merely provides data about the Bitcoin network.</b> It cannot help you with retrieving funds, confirming your transaction quicker, etc.</p><p>For any such requests, you need to get in touch with the entity that helped make the transaction (wallet software, exchange company, etc).</p></td></tr></table>
+          <table *ngIf="!mobileViewport"><tr><td><app-svg-images name="warning" class="disclaimer-warning" viewBox="0 0 304 304" fill="#ffc107" width="50" height="50"></app-svg-images></td><td><p i18n="faq.big-disclaimer"><b>mempool.space merely provides data about the Bitcoin network.</b> It cannot help you with retrieving funds, wallet issues, etc.</p><p>For any such requests, you need to get in touch with the entity that helped make the transaction (wallet software, exchange company, etc).</p></td></tr></table>
+          <div *ngIf="mobileViewport"><app-svg-images name="warning" class="disclaimer-warning" viewBox="0 0 304 304" fill="#ffc107" width="50" height="50"></app-svg-images><p i18n="faq.big-disclaimer"><b>mempool.space merely provides data about the Bitcoin network.</b> It cannot help you with retrieving funds, wallet issues, etc.</p><p>For any such requests, you need to get in touch with the entity that helped make the transaction (wallet software, exchange company, etc).</p></div>
 
         </div>
 
         <div class="doc-item-container" *ngFor="let item of faq">
-          <div *ngIf="!item.hasOwnProperty('options') || ( item.hasOwnProperty('options') && item.options.hasOwnProperty('auditOnly') && item.options.auditOnly && auditEnabled )">
+          <div *ngIf="!item.hasOwnProperty('options') || ( item.hasOwnProperty('options') && item.options.hasOwnProperty('officialOnly') && item.options.officialOnly && officialMempoolInstance ) || ( item.hasOwnProperty('options') && item.options.hasOwnProperty('auditOnly') && item.options.auditOnly && auditEnabled )">
             <h3 *ngIf="item.type === 'category'">{{ item.title }}</h3>
             <div *ngIf="item.type !== 'category'" class="endpoint-container" id="{{ item.fragment }}">
               <a id="{{ item.fragment + '-tab-header' }}" class="section-header" (click)="anchorLinkClick( $event )" [routerLink]="['./']" fragment="{{ item.fragment }}"><table><tr><td>{{ item.title }}</td><td><span>{{ item.category }}</span></td></tr></table></a>
@@ -39,7 +40,7 @@
       <div class="doc-content">
 
         <p class="doc-welcome-note">Below is a reference for the {{ network.val === '' ? 'Bitcoin' : network.val.charAt(0).toUpperCase() + network.val.slice(1) }} <ng-container i18n="api-docs.title">REST API service</ng-container>.</p>
-        <p class="doc-welcome-note api-note" *ngIf="officialMempoolInstance">Note that we enforce rate limits. If you exceed these limits, you will get a polite error encouraging you to run your own Mempool instance. If you repeatedly exceed the limits, you may be banned from accessing the service altogether.</p>
+        <p class="doc-welcome-note api-note" *ngIf="officialMempoolInstance">Note that we enforce rate limits. If you exceed these limits, you will get an HTTP 429 error. If you repeatedly exceed the limits, you may be banned from accessing the service altogether. Consider an <a href="/enterprise">enterprise sponsorship</a> if you need higher API limits.</p>
 
         <div class="doc-item-container" *ngFor="let item of restDocs">
           <h3 *ngIf="( item.type === 'category' ) && ( item.showConditions.indexOf(network.val) > -1 )">{{ item.title }}</h3>
@@ -206,6 +207,18 @@
   <p>When a Bitcoin transaction is made, it is stored in a Bitcoin node's mempool before it is confirmed into a block. When the rate of incoming transactions exceeds the rate transactions are confirmed, the mempool grows in size.</p><p>By default, Bitcoin Core allocates 300MB of memory for its mempool, so when a node's mempool grows big enough to use all 300MB of allocated memory, we say it's "full".</p><p>Once a node's mempool is using all of its allocated memory, it will start rejecting new transactions below a certain feerate threshold—so when this is the case, be extra sure to set a feerate that (at a minimum) exceeds that threshold. The current threshold feerate (and memory usage) are displayed right on Mempool's front page.</p>
 </ng-template>
 
+<ng-template type="how-big-is-mempool-used-by-mempool-space">
+  <p>mempool.space uses multiple Bitcoin nodes to obtain data: some with the default 300MB mempool memory limit (call these Small Nodes) and others with a much larger mempool memory limit (call these Big Nodes).</p>
+  <p>Many nodes on the Bitcoin network are configured to run with the default 300MB mempool memory setting. When all 300MB of memory are used up, such nodes will reject transactions below a certain threshold feerate. Running Small Nodes allows mempool.space to tell you what this threshold feerate is—this is the "Purging" feerate that shows on the front page when mempools are full, which you can use to be reasonably sure that your transaction will be widely propagated.</p>
+    <p>Big Node mempools are so big that they don't need to reject (or purge) transactions. Such nodes allow for mempool.space to provide you with information on any pending transaction it has received—no matter how congested the mempool is, and no matter how low-feerate or low-priority the transaction is.</p>
+</ng-template>
+
+<ng-template type="what-is-memory-usage">
+  <p>Memory usage on the front page refers to the real-time amount of system memory used by a Bitcoin node's mempool. This memory usage number is always higher than the total size of all pending transactions in the mempool due to indexes, pointers, and other overhead used by Bitcoin Core for storage and processing.</p>
+  <p>mempool.space shows the memory usage of a Bitcoin node that has a very high mempool memory limit. As a result, when mempools fill up, you may notice memory usage on mempool.space go beyond 300MB. This is not a mistake—this memory usage figure is high because it's for a Bitcoin node that isn't rejecting (or evicting) transactions. Consider it to be another data point to give you an idea of how congested the mempool is relative to the default memory limit of 300MB.</p>
+  <p>A Bitcoin node running the default 300MB mempool memory limit, like most Raspberry Pi nodes, will never go past 300MB of memory usage.</p>
+</ng-template>
+
 <ng-template type="why-empty-blocks">
   <p>When a new block is found, mining pools send miners a block template with no transactions so they can start searching for the next block as soon as possible. They send a block template full of transactions right afterward, but a full block template is a bigger data transfer and takes slightly longer to reach miners.</p><p>In this intervening time, which is usually no more than 1-2 seconds, miners sometimes get lucky and find a new block using the empty block template.</p>
 </ng-template>
@@ -216,8 +229,8 @@
 
 <ng-template type="why-dont-fee-ranges-match">
   <p>Mempool aims to show you the <i>effective feerate</i> range for blocks—how much would you actually need to pay to get a transaction included in a block.</p>
-  <p>A transaction's effective feerate is not always the same as the feerate explicitly set for it. For example, if you see a 1 s/vb transaction in a block with a displayed feerate range of 5 s/vb to 72 s/vb, chances are that 1 s/vb transaction had a high-feerate child transaction that boosted its effective feerate to 5 s/vb or higher (this is how CPFP fee-bumping works). In such a case, it would be misleading to use 1 s/vb as the lower bound of the block's feerate range because it actually required more than 1 s/vb to confirm that transaction in that block.</p>
-  <p>For unconfirmed CPFP transactions, Mempool will show the effective feerate (along with descendent & ancestor transaction information) on the transaction page. For confirmed transactions, CPFP relationships are not stored, so this additional information is not shown.</p>
+  <p>A transaction's effective feerate is not always the same as the feerate explicitly set for it. For example, if you see a 1 s/vb transaction in a block with a displayed feerate range of 5 s/vb to 72 s/vb, chances are that 1 s/vb transaction had a high-feerate child transaction that boosted its effective feerate to 5 s/vb or higher (this is how CPFP fee-bumping works). In such a case, it would be misleading to use 1 s/vb as the lower bound of the block's feerate range since it actually required more than 1 s/vb to confirm that transaction in that block.</p>
+  <p>You can find a transaction's feerate on its transaction details page. If the transaction has any CPFP relationships, the page will also show the transaction's effective feerate along with links to descendent and/or ancestor transactions.</p>
 </ng-template>
 
 <ng-template type="how-do-block-audits-work">
@@ -266,8 +279,9 @@
   We support one-click installation on a number of Raspberry Pi full-node distros including Umbrel, RaspiBlitz, MyNode, RoninDojo, and Start9's Embassy.
 </ng-template>
 
-<ng-template type="host-my-own-instance-linux-server">
-  You can manually install Mempool on your own Linux server, but this requires advanced sysadmin skills since you will be manually configuring everything. We do not provide support for manual deployments.
+<ng-template type="host-my-own-instance-server">
+  <p>You can manually install Mempool on your own server, but this requires advanced sysadmin skills since you will be manually configuring everything. You could also use our <a href="https://github.com/mempool/mempool/tree/master/docker" target="_blank">Docker images</a>.</p><p>In any case, we only provide support for manual deployments to <a href="/enterprise">enterprise sponsors</a>.</p>
+  <p>For casual users, we strongly suggest installing Mempool using one of the <a href="https://github.com/mempool/mempool#one-click-installation" target="_blank">1-click install methods</a>.</p>
 </ng-template>
 
 <ng-template type="install-mempool-with-docker">

@@ -2,8 +2,7 @@ import * as fs from 'fs';
 import path from 'path';
 import config from '../config';
 import logger from '../logger';
-import { IConversionRates } from '../mempool.interfaces';
-import PricesRepository from '../repositories/PricesRepository';
+import PricesRepository, { ApiPrice, MAX_PRICES } from '../repositories/PricesRepository';
 import BitfinexApi from './price-feeds/bitfinex-api';
 import BitflyerApi from './price-feeds/bitflyer-api';
 import CoinbaseApi from './price-feeds/coinbase-api';
@@ -21,18 +20,21 @@ export interface PriceFeed {
 }
 
 export interface PriceHistory {
-  [timestamp: number]: IConversionRates;
+  [timestamp: number]: ApiPrice;
 }
 
 class PriceUpdater {
   public historyInserted = false;
-  lastRun = 0;
-  lastHistoricalRun = 0;
-  running = false;
-  feeds: PriceFeed[] = [];
-  currencies: string[] = ['USD', 'EUR', 'GBP', 'CAD', 'CHF', 'AUD', 'JPY'];
-  latestPrices: IConversionRates;
-  private ratesChangedCallback: ((rates: IConversionRates) => void) | undefined;
+  private timeBetweenUpdatesMs = 360_0000 / config.MEMPOOL.PRICE_UPDATES_PER_HOUR;
+  private cyclePosition = -1;
+  private firstRun = true;
+  private lastTime = -1;
+  private lastHistoricalRun = 0;
+  private running = false;
+  private feeds: PriceFeed[] = [];
+  private currencies: string[] = ['USD', 'EUR', 'GBP', 'CAD', 'CHF', 'AUD', 'JPY'];
+  private latestPrices: ApiPrice;
+  private ratesChangedCallback: ((rates: ApiPrice) => void) | undefined;
 
   constructor() {
     this.latestPrices = this.getEmptyPricesObj();
@@ -42,21 +44,28 @@ class PriceUpdater {
     this.feeds.push(new CoinbaseApi());
     this.feeds.push(new BitfinexApi());
     this.feeds.push(new GeminiApi());
+
+    this.setCyclePosition();
   }
 
-  public getEmptyPricesObj(): IConversionRates {
+  public getLatestPrices(): ApiPrice {
+    return this.latestPrices;
+  }
+
+  public getEmptyPricesObj(): ApiPrice {
     return {
-      USD: 0,
-      EUR: 0,
-      GBP: 0,
-      CAD: 0,
-      CHF: 0,
-      AUD: 0,
-      JPY: 0,
+      time: 0,
+      USD: -1,
+      EUR: -1,
+      GBP: -1,
+      CAD: -1,
+      CHF: -1,
+      AUD: -1,
+      JPY: -1,
     };
   }
 
-  public setRatesChangedCallback(fn: (rates: IConversionRates) => void) {
+  public setRatesChangedCallback(fn: (rates: ApiPrice) => void): void {
     this.ratesChangedCallback = fn;
   }
 
@@ -69,6 +78,11 @@ class PriceUpdater {
   }
 
   public async $run(): Promise<void> {
+    if (config.MEMPOOL.NETWORK === 'signet' || config.MEMPOOL.NETWORK === 'testnet') {
+      // Coins have no value on testnet/signet, so we want to always show 0
+      return;
+    }
+
     if (this.running === true) {
       return;
     }
@@ -84,28 +98,54 @@ class PriceUpdater {
       if (this.historyInserted === false && config.DATABASE.ENABLED === true) {
         await this.$insertHistoricalPrices();
       }
-    } catch (e) {
+    } catch (e: any) {
       logger.err(`Cannot save BTC prices in db. Reason: ${e instanceof Error ? e.message : e}`, logger.tags.mining);
     }
 
     this.running = false;
   }
 
+  private getMillisecondsSinceBeginningOfHour(): number {
+    const now = new Date();
+    const beginningOfHour = new Date(now);
+    beginningOfHour.setMinutes(0, 0, 0);
+    return now.getTime() - beginningOfHour.getTime();
+  }
+
+  private setCyclePosition(): void {
+    const millisecondsSinceBeginningOfHour = this.getMillisecondsSinceBeginningOfHour();
+    for (let i = 0; i < config.MEMPOOL.PRICE_UPDATES_PER_HOUR; i++) {
+      if (this.timeBetweenUpdatesMs * i > millisecondsSinceBeginningOfHour) {
+        this.cyclePosition = i;
+        return;
+      }
+    }
+    this.cyclePosition = config.MEMPOOL.PRICE_UPDATES_PER_HOUR;
+  }
+
   /**
    * Fetch last BTC price from exchanges, average them, and save it in the database once every hour
    */
   private async $updatePrice(): Promise<void> {
-    if (this.lastRun === 0 && config.DATABASE.ENABLED === true) {
-      this.lastRun = await PricesRepository.$getLatestPriceTime();
+    let forceUpdate = false;
+    if (this.firstRun === true && config.DATABASE.ENABLED === true) {
+      const lastUpdate = await PricesRepository.$getLatestPriceTime();
+      if (new Date().getTime() / 1000 - lastUpdate > this.timeBetweenUpdatesMs / 1000) {
+        forceUpdate = true;
+      }
+      this.firstRun = false;
     }
 
-    if ((Math.round(new Date().getTime() / 1000) - this.lastRun) < 3600) {
-      // Refresh only once every hour
+    const millisecondsSinceBeginningOfHour = this.getMillisecondsSinceBeginningOfHour();
+
+    // Reset the cycle on new hour
+    if (this.lastTime > millisecondsSinceBeginningOfHour) {
+      this.cyclePosition = 0;
+    }
+    this.lastTime = millisecondsSinceBeginningOfHour;
+    if (millisecondsSinceBeginningOfHour < this.timeBetweenUpdatesMs * this.cyclePosition && !forceUpdate && this.cyclePosition !== 0) {
       return;
     }
-
-    const previousRun = this.lastRun;
-    this.lastRun = new Date().getTime() / 1000;
 
     for (const currency of this.currencies) {
       let prices: number[] = [];
@@ -115,7 +155,7 @@ class PriceUpdater {
         if (feed.currencies.includes(currency)) {
           try {
             const price = await feed.$fetchPrice(currency);
-            if (price > 0) {
+            if (price > -1 && price < MAX_PRICES[currency]) {
               prices.push(price);
             }
             logger.debug(`${feed.name} BTC/${currency} price: ${price}`, logger.tags.mining);
@@ -130,28 +170,38 @@ class PriceUpdater {
 
       // Compute average price, non weighted
       prices = prices.filter(price => price > 0);
-      this.latestPrices[currency] = Math.round((prices.reduce((partialSum, a) => partialSum + a, 0)) / prices.length);
+      if (prices.length === 0) {
+        this.latestPrices[currency] = -1;
+      } else {
+        this.latestPrices[currency] = Math.round((prices.reduce((partialSum, a) => partialSum + a, 0)) / prices.length);
+      }
     }
 
-    logger.info(`Latest BTC fiat averaged price: ${JSON.stringify(this.latestPrices)}`);
-
-    if (config.DATABASE.ENABLED === true) {
+    if (config.DATABASE.ENABLED === true && this.cyclePosition === 0) {
       // Save everything in db
       try {
         const p = 60 * 60 * 1000; // milliseconds in an hour
         const nowRounded = new Date(Math.round(new Date().getTime() / p) * p); // https://stackoverflow.com/a/28037042
         await PricesRepository.$savePrices(nowRounded.getTime() / 1000, this.latestPrices);
       } catch (e) {
-        this.lastRun = previousRun + 5 * 60;
         logger.err(`Cannot save latest prices into db. Trying again in 5 minutes. Reason: ${(e instanceof Error ? e.message : e)}`);
       }
     }
+
+    this.latestPrices.time = Math.round(new Date().getTime() / 1000);
+    logger.info(`Latest BTC fiat averaged price: ${JSON.stringify(this.latestPrices)}`);
 
     if (this.ratesChangedCallback) {
       this.ratesChangedCallback(this.latestPrices);
     }
 
-    this.lastRun = new Date().getTime() / 1000;
+    if (!forceUpdate) {
+      this.cyclePosition++;
+    }
+
+    if (this.latestPrices.USD === -1) {
+      this.latestPrices = await PricesRepository.$getLatestConversionRates();
+    }
   }
 
   /**
@@ -205,7 +255,7 @@ class PriceUpdater {
   private async $insertMissingRecentPrices(type: 'hour' | 'day'): Promise<void> {
     const existingPriceTimes = await PricesRepository.$getPricesTimes();
 
-    logger.info(`Fetching ${type === 'day' ? 'dai' : 'hour'}ly price history from exchanges and saving missing ones into the database`, logger.tags.mining);
+    logger.debug(`Fetching ${type === 'day' ? 'dai' : 'hour'}ly price history from exchanges and saving missing ones into the database`, logger.tags.mining);
 
     const historicalPrices: PriceHistory[] = [];
 
@@ -220,7 +270,7 @@ class PriceUpdater {
 
     // Group them by timestamp and currency, for example
     // grouped[123456789]['USD'] = [1, 2, 3, 4];
-    const grouped: any = {};
+    const grouped = {};
     for (const historicalEntry of historicalPrices) {
       for (const time in historicalEntry) {
         if (existingPriceTimes.includes(parseInt(time, 10))) {
@@ -235,7 +285,7 @@ class PriceUpdater {
 
         for (const currency of this.currencies) {
           const price = historicalEntry[time][currency];
-          if (price > 0) {
+          if (price > -1 && price < MAX_PRICES[currency]) {
             grouped[time][currency].push(typeof price === 'string' ? parseInt(price, 10) : price);
           }
         }
@@ -245,7 +295,7 @@ class PriceUpdater {
     // Average prices and insert everything into the db
     let totalInserted = 0;
     for (const time in grouped) {
-      const prices: IConversionRates = this.getEmptyPricesObj();
+      const prices: ApiPrice = this.getEmptyPricesObj();
       for (const currency in grouped[time]) {
         if (grouped[time][currency].length === 0) {
           continue;

@@ -2,6 +2,7 @@ import { Block, Transaction } from "./electrs.interface";
 
 export interface OptimizedMempoolStats {
   added: number;
+  count: number;
   vbytes_per_second: number;
   total_fee: number;
   mempool_byte_weight: number;
@@ -24,6 +25,23 @@ export interface CpfpInfo {
   ancestors: Ancestor[];
   descendants?: Ancestor[];
   bestDescendant?: BestDescendant | null;
+  effectiveFeePerVsize?: number;
+  sigops?: number;
+  adjustedVsize?: number;
+  acceleration?: boolean;
+}
+
+export interface RbfInfo {
+  tx: RbfTransaction;
+  time: number;
+  interval?: number;
+}
+
+export interface RbfTree extends RbfInfo {
+  mined?: boolean;
+  fullRbf: boolean;
+  replaces: RbfTree[];
+  replacedBy?: RbfTransaction;
 }
 
 export interface DifficultyAdjustment {
@@ -33,9 +51,11 @@ export interface DifficultyAdjustment {
   remainingBlocks: number;
   remainingTime: number;
   previousRetarget: number;
+  previousTime: number;
   nextRetargetHeight: number;
   timeAvg: number;
   timeOffset: number;
+  expectedBlocks: number;
 }
 
 export interface AddressInformation {
@@ -73,6 +93,8 @@ export interface SinglePoolStats {
   emptyBlockRatio: string;
   logo: string;
   slug: string;
+  avgMatchRate: number;
+  avgFeeDelta: number;
 }
 export interface PoolsStats {
   blockCount: number;
@@ -90,6 +112,8 @@ export interface PoolInfo {
   regexes: string; // JSON array
   addresses: string; // JSON array
   emptyBlocks: number;
+  slug: string;
+  poolUniqueId: number;
 }
 export interface PoolStat {
   pool: PoolInfo;
@@ -104,18 +128,23 @@ export interface PoolStat {
     '1w': number,
   };
   estimatedHashrate: number;
-  reportedHashrate: number;
-  luck?: number;
+  avgBlockHealth: number;
+  totalReward: number;
 }
 
 export interface BlockExtension {
   totalFees?: number;
   medianFee?: number;
+  minFee?: number;
+  maxFee?: number;
   feeRange?: number[];
   reward?: number;
-  coinbaseTx?: Transaction;
   coinbaseRaw?: string;
   matchRate?: number;
+  expectedFees?: number;
+  expectedWeight?: number;
+  feeDelta?: number;
+  similarity?: number;
   pool?: {
     id: number;
     name: string;
@@ -130,7 +159,16 @@ export interface BlockExtended extends Block {
 export interface BlockAudit extends BlockExtended {
   missingTxs: string[],
   addedTxs: string[],
+  freshTxs: string[],
+  sigopTxs: string[],
+  fullrbfTxs: string[],
+  acceleratedTxs: string[],
   matchRate: number,
+  expectedFees: number,
+  expectedWeight: number,
+  feeDelta?: number,
+  weightDelta?: number,
+  txDelta?: number,
   template: TransactionStripped[],
   transactions: TransactionStripped[],
 }
@@ -140,7 +178,21 @@ export interface TransactionStripped {
   fee: number;
   vsize: number;
   value: number;
-  status?: 'found' | 'missing' | 'fresh' | 'added' | 'censored' | 'selected';
+  rate?: number; // effective fee rate
+  acc?: boolean;
+  status?: 'found' | 'missing' | 'sigop' | 'fresh' | 'freshcpfp' | 'added' | 'censored' | 'selected' | 'rbf' | 'accelerated';
+  context?: 'projected' | 'actual';
+}
+
+export interface RbfTransaction extends TransactionStripped {
+  rbf?: boolean;
+  mined?: boolean,
+  fullRbf?: boolean,
+}
+export interface MempoolPosition {
+  block: number,
+  vsize: number,
+  accelerated?: boolean
 }
 
 export interface RewardStats {
@@ -149,6 +201,19 @@ export interface RewardStats {
   totalReward: number;
   totalFee: number;
   totalTx: number;
+}
+
+export interface BlockSizesAndWeights {
+  sizes: {
+    timestamp: number;
+    avgHeight: number;
+    avgSize: number;
+  }[];
+  weights: {
+    timestamp: number;
+    avgHeight: number;
+    avgWeight: number;
+  }[];
 }
 
 export interface AuditScore {
@@ -212,6 +277,7 @@ export interface IChannel {
   closing_transaction_id: string;
   closing_reason: string;
   updated_at: string;
+  closing_date?: string;
   created: string;
   status: number;
   node_left: INode,

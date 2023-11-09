@@ -1,11 +1,11 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, Input, LOCALE_ID, OnInit, HostBinding } from '@angular/core';
-import { EChartsOption } from 'echarts';
+import { EChartsOption } from '../../graphs/echarts';
 import { Observable } from 'rxjs';
 import { delay, map, retryWhen, share, startWith, switchMap, tap } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { SeoService } from '../../services/seo.service';
 import { UntypedFormBuilder, UntypedFormGroup } from '@angular/forms';
-import { poolsColor } from '../../app.constants';
+import { chartColors, poolsColor } from '../../app.constants';
 import { StorageService } from '../../services/storage.service';
 import { MiningService } from '../../services/mining.service';
 import { download } from '../../shared/graphs.utils';
@@ -173,6 +173,7 @@ export class HashrateChartPoolsComponent implements OnInit {
     this.chartOptions = {
       title: title,
       animation: false,
+      color: chartColors.filter(color => color !== '#FDD835'),
       grid: {
         right: this.right,
         left: this.left,

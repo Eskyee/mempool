@@ -1,19 +1,17 @@
 import { ChangeDetectionStrategy, Component, Inject, Input, LOCALE_ID, OnInit } from '@angular/core';
-import { EChartsOption, graphic } from 'echarts';
-import { Observable, Subscription } from 'rxjs';
+import { echarts, EChartsOption } from '../../graphs/echarts';
+import { Observable } from 'rxjs';
 import { map, share, startWith, switchMap, tap } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { SeoService } from '../../services/seo.service';
 import { formatNumber } from '@angular/common';
 import { UntypedFormBuilder, UntypedFormGroup } from '@angular/forms';
-import { download, formatterXAxis, formatterXAxisLabel, formatterXAxisTimeCategory } from '../../shared/graphs.utils';
+import { download, formatterXAxis } from '../../shared/graphs.utils';
 import { MiningService } from '../../services/mining.service';
-import { StateService } from '../../services/state.service';
 import { StorageService } from '../../services/storage.service';
 import { ActivatedRoute } from '@angular/router';
 import { FiatShortenerPipe } from '../../shared/pipes/fiat-shortener.pipe';
 import { FiatCurrencyPipe } from '../../shared/pipes/fiat-currency.pipe';
-import { fiatCurrencies } from '../../app.constants';
 
 @Component({
   selector: 'app-block-rewards-graph',
@@ -47,7 +45,6 @@ export class BlockRewardsGraphComponent implements OnInit {
   timespan = '';
   chartInstance: any = undefined;
 
-  currencySubscription: Subscription;
   currency: string;
 
   constructor(
@@ -56,23 +53,17 @@ export class BlockRewardsGraphComponent implements OnInit {
     private apiService: ApiService,
     private formBuilder: UntypedFormBuilder,
     private miningService: MiningService,
-    private stateService: StateService,
     private storageService: StorageService,
     private route: ActivatedRoute,
     private fiatShortenerPipe: FiatShortenerPipe,
     private fiatCurrencyPipe: FiatCurrencyPipe,
   ) {
-    this.currencySubscription = this.stateService.fiatCurrency$.subscribe((fiat) => {
-      if (fiat && fiatCurrencies[fiat]?.indexed) {
-        this.currency = fiat;
-      } else {
-        this.currency = 'USD';
-      }
-    });
+    this.currency = 'USD';
   }
 
   ngOnInit(): void {
     this.seoService.setTitle($localize`:@@8ba8fe810458280a83df7fdf4c614dfc1a826445:Block Rewards`);
+    this.seoService.setDescription($localize`:@@meta.description.bitcoin.graphs.block-rewards:See Bitcoin block rewards in BTC and USD visualized over time. Block rewards are the total funds miners earn from the block subsidy and fees.`);
     this.miningWindowPreference = this.miningService.getDefaultTimespan('3m');
     this.radioGroupForm = this.formBuilder.group({ dateSpan: this.miningWindowPreference });
     this.radioGroupForm.controls.dateSpan.setValue(this.miningWindowPreference);
@@ -80,7 +71,7 @@ export class BlockRewardsGraphComponent implements OnInit {
     this.route
       .fragment
       .subscribe((fragment) => {
-        if (['3m', '6m', '1y', '2y', '3y', 'all'].indexOf(fragment) > -1) {
+        if (['1m', '3m', '6m', '1y', '2y', '3y', 'all'].indexOf(fragment) > -1) {
           this.radioGroupForm.controls.dateSpan.setValue(fragment, { emitEvent: false });
         }
       });
@@ -132,11 +123,11 @@ export class BlockRewardsGraphComponent implements OnInit {
       title: title,
       animation: false,
       color: [
-        new graphic.LinearGradient(0, 0, 0, 1, [
+        new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#FDD835' },
           { offset: 1, color: '#FB8C00' },
         ]),
-        new graphic.LinearGradient(0, 0, 0, 1, [
+        new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#C0CA33' },
           { offset: 1, color: '#1B5E20' },
         ]),
@@ -201,7 +192,7 @@ export class BlockRewardsGraphComponent implements OnInit {
           {
             name: 'Rewards ' + this.currency,
             inactiveColor: 'rgb(110, 112, 121)',
-            textStyle: {  
+            textStyle: {
               color: 'white',
             },
             icon: 'roundRect',

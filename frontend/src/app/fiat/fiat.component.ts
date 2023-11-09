@@ -1,11 +1,12 @@
 import { Component, OnInit, ChangeDetectionStrategy, Input, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { Observable, Subscription } from 'rxjs';
+import { Price } from '../services/price.service';
 import { StateService } from '../services/state.service';
 
 @Component({
   selector: 'app-fiat',
   templateUrl: './fiat.component.html',
-  styleUrls: ['./fiat.component.scss'],
+  styleUrls: [],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class FiatComponent implements OnInit, OnDestroy {
@@ -15,6 +16,8 @@ export class FiatComponent implements OnInit, OnDestroy {
 
   @Input() value: number;
   @Input() digitsInfo = '1.2-2';
+  @Input() blockConversion: Price;
+  @Input() colorClass = 'green-color';
 
   constructor(
     private stateService: StateService,

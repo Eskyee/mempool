@@ -1,19 +1,17 @@
 import { ChangeDetectionStrategy, Component, Inject, Input, LOCALE_ID, OnInit } from '@angular/core';
-import { EChartsOption, graphic } from 'echarts';
-import { Observable, Subscription } from 'rxjs';
+import { echarts, EChartsOption } from '../../graphs/echarts';
+import { Observable } from 'rxjs';
 import { map, share, startWith, switchMap, tap } from 'rxjs/operators';
 import { ApiService } from '../../services/api.service';
 import { SeoService } from '../../services/seo.service';
-import { formatCurrency, formatNumber, getCurrencySymbol } from '@angular/common';
+import { formatNumber } from '@angular/common';
 import { UntypedFormBuilder, UntypedFormGroup } from '@angular/forms';
-import { download, formatterXAxis, formatterXAxisLabel, formatterXAxisTimeCategory } from '../../shared/graphs.utils';
-import { StateService } from '../../services/state.service';
+import { download, formatterXAxis } from '../../shared/graphs.utils';
 import { StorageService } from '../../services/storage.service';
 import { MiningService } from '../../services/mining.service';
 import { ActivatedRoute } from '@angular/router';
 import { FiatShortenerPipe } from '../../shared/pipes/fiat-shortener.pipe';
 import { FiatCurrencyPipe } from '../../shared/pipes/fiat-currency.pipe';
-import { fiatCurrencies } from '../../app.constants';
 
 @Component({
   selector: 'app-block-fees-graph',
@@ -47,7 +45,6 @@ export class BlockFeesGraphComponent implements OnInit {
   timespan = '';
   chartInstance: any = undefined;
 
-  currencySubscription: Subscription;
   currency: string;
 
   constructor(
@@ -57,25 +54,18 @@ export class BlockFeesGraphComponent implements OnInit {
     private formBuilder: UntypedFormBuilder,
     private storageService: StorageService,
     private miningService: MiningService,
-    private stateService: StateService,
     private route: ActivatedRoute,
     private fiatShortenerPipe: FiatShortenerPipe,
     private fiatCurrencyPipe: FiatCurrencyPipe,
   ) {
     this.radioGroupForm = this.formBuilder.group({ dateSpan: '1y' });
     this.radioGroupForm.controls.dateSpan.setValue('1y');
-
-    this.currencySubscription = this.stateService.fiatCurrency$.subscribe((fiat) => {
-      if (fiat && fiatCurrencies[fiat]?.indexed) {
-        this.currency = fiat;
-      } else {
-        this.currency = 'USD';
-      }
-    });
+    this.currency = 'USD';
   }
 
   ngOnInit(): void {
     this.seoService.setTitle($localize`:@@6c453b11fd7bd159ae30bc381f367bc736d86909:Block Fees`);
+    this.seoService.setDescription($localize`:@@meta.description.bitcoin.graphs.block-fees:See the average mining fees earned per Bitcoin block visualized in BTC and USD over time.`);
     this.miningWindowPreference = this.miningService.getDefaultTimespan('1m');
     this.radioGroupForm = this.formBuilder.group({ dateSpan: this.miningWindowPreference });
     this.radioGroupForm.controls.dateSpan.setValue(this.miningWindowPreference);
@@ -92,6 +82,7 @@ export class BlockFeesGraphComponent implements OnInit {
       .pipe(
         startWith(this.radioGroupForm.controls.dateSpan.value),
         switchMap((timespan) => {
+          this.isLoading = true;
           this.storageService.setValue('miningWindowPreference', timespan);
           this.timespan = timespan;
           this.isLoading = true;
@@ -132,11 +123,11 @@ export class BlockFeesGraphComponent implements OnInit {
     this.chartOptions = {
       title: title,
       color: [
-        new graphic.LinearGradient(0, 0, 0, 1, [
+        new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#FDD835' },
           { offset: 1, color: '#FB8C00' },
         ]),
-        new graphic.LinearGradient(0, 0, 0, 1, [
+        new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: '#C0CA33' },
           { offset: 1, color: '#1B5E20' },
         ]),
@@ -202,7 +193,7 @@ export class BlockFeesGraphComponent implements OnInit {
           {
             name: 'Fees ' + this.currency,
             inactiveColor: 'rgb(110, 112, 121)',
-            textStyle: {  
+            textStyle: {
               color: 'white',
             },
             icon: 'roundRect',
